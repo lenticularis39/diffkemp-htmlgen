@@ -1,0 +1,7 @@
+#! /usr/bin/env python3
+
+from diffkemp_htmlgen import htmlgen
+
+if __name__ == "__main__":
+    htmlgen.run_from_cli()
+

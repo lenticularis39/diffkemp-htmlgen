@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+*$py.class
+diffkemp_htmlgen.egg-info/
