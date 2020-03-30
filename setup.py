@@ -7,4 +7,4 @@ setup(name="diffkemp-htmlgen",
       author_email="tglozar@gmail.com",
       url="https://github.com/lenticularis39/diffkemp-htmlgen",
       packages=find_packages(),
-      install_requires=["yattag"])
+      install_requires=["pyyaml", "yattag"])
