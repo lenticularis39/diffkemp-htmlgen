@@ -3,3 +3,4 @@ __pycache__/
 *$py.class
 diffkemp_htmlgen.egg-info/
 .venv
+.idea

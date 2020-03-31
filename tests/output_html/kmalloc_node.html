@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>kmalloc_node</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" />
+  </head>
+  <body class="py-4">
+    <div class="container">
+      <h2>kmalloc_node</h2>
+      <p>
+        <a href="index.html">go back</a>
+      </p>
+      <ul>
+        <li>kind: function</li>
+        <li>old location: include/linux/slab.h:541</li>
+        <li>new location: include/linux/slab.h:578</li>
+        <li>difference: <pre>*************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
+*** 544,546 ***
+    if (__builtin_constant_p(size) &amp;&amp;
+!       size &lt;= KMALLOC_MAX_CACHE_SIZE &amp;&amp; !(flags &amp; GFP_DMA)) {
+        unsigned int i = kmalloc_index(size);
+--- 581,583 ---
+    if (__builtin_constant_p(size) &amp;&amp;
+!       size &lt;= KMALLOC_MAX_CACHE_SIZE) {
+        unsigned int i = kmalloc_index(size);
+*************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
+*** 550,552 ***
+
+!       return kmem_cache_alloc_node_trace(kmalloc_caches[i],
+                        flags, node, size);
+--- 587,590 ---
+
+!       return kmem_cache_alloc_node_trace(
+!               kmalloc_caches[kmalloc_type(flags)][i],
+                        flags, node, size);
+</pre></li>
+        <li>affects symbols:<ul><li><a href="kabi/__alloc_pages_nodemask-function.html">__alloc_pages_nodemask</a><ul><li>old callstack:<ul><li>init_rescuer at kernel/workqueue.c:4094</li><li>alloc_worker at kernel/workqueue.c:4013</li><li>kzalloc_node at kernel/workqueue.c:1704</li><li>kmalloc_node at include/linux/slab.h:718</li></ul></li><li>new callstack:<ul><li>init_rescuer at kernel/workqueue.c:4117</li><li>alloc_worker at kernel/workqueue.c:4036</li><li>kzalloc_node at kernel/workqueue.c:1724</li><li>kmalloc_node at include/linux/slab.h:760</li></ul></li></ul></li></ul></li>
+      </ul>
+    </div>
+  </body>
+</html>

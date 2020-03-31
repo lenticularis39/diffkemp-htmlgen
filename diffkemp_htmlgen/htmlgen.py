@@ -431,7 +431,8 @@ class HTMLGenerator:
                             self._generate_internal_symbol_table(differences)
                         with self.tag("li"):
                             self.text(self.external_symbol_heading)
-                            self._generate_external_symbol_table(external_symbols)
+                            self._generate_external_symbol_table(
+                                external_symbols)
 
         with open(os.path.join(self.output_dir, "index.html"), "w") as f:
             f.write(indent(self.doc.getvalue()))

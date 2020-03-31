@@ -1,0 +1,61 @@
+symbol: kmalloc_node
+diff-kind: function
+
+location-old:
+  file: include/linux/slab.h
+  line: 541
+location-new:
+  file: include/linux/slab.h
+  line: 578
+
+diff: |
+  *************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
+  *** 544,546 ***
+      if (__builtin_constant_p(size) &&
+  !       size <= KMALLOC_MAX_CACHE_SIZE && !(flags & GFP_DMA)) {
+          unsigned int i = kmalloc_index(size);
+  --- 581,583 ---
+      if (__builtin_constant_p(size) &&
+  !       size <= KMALLOC_MAX_CACHE_SIZE) {
+          unsigned int i = kmalloc_index(size);
+  *************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
+  *** 550,552 ***
+
+  !       return kmem_cache_alloc_node_trace(kmalloc_caches[i],
+                          flags, node, size);
+  --- 587,590 ---
+
+  !       return kmem_cache_alloc_node_trace(
+  !               kmalloc_caches[kmalloc_type(flags)][i],
+                          flags, node, size);
+
+affected-symbols:
+  - symbol:
+        name:  __alloc_pages_nodemask
+        kind: function
+    callstack-old:
+      - symbol: init_rescuer
+        file: kernel/workqueue.c
+        line: 4094
+      - symbol: alloc_worker
+        file: kernel/workqueue.c
+        line: 4013
+      - symbol: kzalloc_node
+        file: kernel/workqueue.c
+        line: 1704
+      - symbol: kmalloc_node
+        file: include/linux/slab.h
+        line: 718
+    callstack-new:
+      - symbol: init_rescuer
+        file: kernel/workqueue.c
+        line: 4117
+      - symbol: alloc_worker
+        file: kernel/workqueue.c
+        line: 4036
+      - symbol: kzalloc_node
+        file: kernel/workqueue.c
+        line: 1724
+      - symbol: kmalloc_node
+        file: include/linux/slab.h
+        line: 760

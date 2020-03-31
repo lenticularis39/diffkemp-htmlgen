@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>__alloc_pages_nodemask</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" />
+  </head>
+  <body class="py-4">
+    <div class="container">
+      <h2>__alloc_pages_nodemask</h2>
+      <p>
+        <a href="../index.html">go back</a>
+      </p>
+      <ul>
+        <li>kind: function</li>
+        <li>affected by symbols:<ul><li><a href="../kmalloc_node.html">kmalloc_node</a><ul><li>location: include/linux/slab.h:541</li><li>old callstack:<ul><li>init_rescuer at kernel/workqueue.c:4094</li><li>alloc_worker at kernel/workqueue.c:4013</li><li>kzalloc_node at kernel/workqueue.c:1704</li><li>kmalloc_node at include/linux/slab.h:718</li></ul></li><li>new callstack:<ul><li>init_rescuer at kernel/workqueue.c:4117</li><li>alloc_worker at kernel/workqueue.c:4036</li><li>kzalloc_node at kernel/workqueue.c:1724</li><li>kmalloc_node at include/linux/slab.h:760</li></ul></li></ul></li></ul></li>
+      </ul>
+    </div>
+  </body>
+</html>
