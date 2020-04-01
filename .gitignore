@@ -4,3 +4,4 @@ __pycache__/
 diffkemp_htmlgen.egg-info/
 .venv
 .idea
+.mypy_cache

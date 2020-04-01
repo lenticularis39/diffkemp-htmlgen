@@ -9,4 +9,5 @@ install:
 script:
     - flake8 diffkemp_htmlgen
     - flake8 tests --ignore=E501,F403,F405
+    - mypy --strict diffkemp_htmlgen
     - python -m pytest tests

@@ -2,7 +2,25 @@ import argparse
 import os
 import yaml
 from enum import IntEnum
-from yattag import Doc, indent
+from typing import List, Dict, Any, Union
+from yattag import Doc, indent  # type: ignore
+
+
+class Location:
+    """Represents a line in a specific file in the kernel source code."""
+    def __init__(self, filename: str, line: int):
+        self.filename = filename
+        self.line = line
+
+    @classmethod
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'Location':
+        filename = yaml["file"]
+        line = int(yaml["line"])
+
+        return cls(filename, line)
+
+    def __str__(self) -> str:
+        return self.filename + ":" + str(self.line)
 
 
 class InternalSymbol:
@@ -16,7 +34,7 @@ class InternalSymbol:
         TYPE = 2
 
         @classmethod
-        def from_yaml(cls, yaml):
+        def from_yaml(cls, yaml: str) -> 'InternalSymbol.Kind':
             dictionary = {
                 "function": cls.FUNCTION,
                 "macro": cls.MACRO,
@@ -24,7 +42,7 @@ class InternalSymbol:
             }
             return dictionary[yaml]
 
-        def __str__(self):
+        def __str__(self) -> str:
             dictionary = {
                 self.FUNCTION: "function",
                 self.MACRO: "macro",
@@ -32,13 +50,14 @@ class InternalSymbol:
             }
             return dictionary[self]
 
-    def __init__(self, name, kind, location):
+    def __init__(self, name: str, kind: 'InternalSymbol.Kind',
+                 location: Location):
         self.name = name
         self.kind = kind
         self.location = location
 
     @classmethod
-    def from_yaml(cls, yaml):
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'InternalSymbol':
         name = yaml["name"]
         kind = cls.Kind.from_yaml(yaml["kind"])
         location = Location.from_yaml(yaml["location"])
@@ -59,7 +78,7 @@ class ExternalSymbol:
         SYSCTL_OPT = 3
 
         @classmethod
-        def from_yaml(cls, yaml):
+        def from_yaml(cls, yaml: str) -> 'ExternalSymbol.Kind':
             dictionary = {
                 "function": cls.FUNCTION,
                 "global-variable": cls.GLOBAL_VAR,
@@ -68,7 +87,7 @@ class ExternalSymbol:
             }
             return dictionary[yaml]
 
-        def __str__(self):
+        def __str__(self) -> str:
             dictionary = {
                 self.FUNCTION: "function",
                 self.GLOBAL_VAR: "global variable",
@@ -77,53 +96,42 @@ class ExternalSymbol:
             }
             return dictionary[self]
 
-    def __init__(self, name, kind):
+    def __init__(self, name: str, kind: 'ExternalSymbol.Kind'):
         self.name = name
         self.kind = kind
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ExternalSymbol):
+            return NotImplemented
         return self.name == other.name and self.kind == other.kind
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.name) ^ hash(str(self.kind))
 
     @classmethod
-    def from_yaml(cls, yaml):
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'ExternalSymbol':
         name = yaml["name"]
         kind = cls.Kind.from_yaml(yaml["kind"])
 
         return cls(name, kind)
 
 
-class Location:
-    """Represents a line in a specific file in the kernel source code."""
-    def __init__(self, filename, line):
-        self.filename = filename
-        self.line = line
-
-    @classmethod
-    def from_yaml(cls, yaml):
-        filename = yaml["file"]
-        line = int(yaml["line"])
-
-        return cls(filename, line)
-
-    def __str__(self):
-        return self.filename + ":" + str(self.line)
-
-
 class Difference:
     """
     Represents a difference in an internal symbol found by DiffKemp.
     """
-    def __init__(self, symbol_old, symbol_new, diff, affected_symbols):
+    def __init__(self,
+                 symbol_old: InternalSymbol,
+                 symbol_new: InternalSymbol,
+                 diff: str,
+                 affected_symbols: List['Affection']):
         self.symbol_old = symbol_old
         self.symbol_new = symbol_new
         self.diff = diff
         self.affected_symbols = affected_symbols
 
     @classmethod
-    def from_yaml(cls, yaml):
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'Difference':
         symbol_old = InternalSymbol(yaml["symbol"],
                                     InternalSymbol.Kind.from_yaml(
                                         yaml["diff-kind"]),
@@ -139,18 +147,35 @@ class Difference:
         return cls(symbol_old, symbol_new, diff, affected_symbols)
 
 
+class Call:
+    """
+    Represents a call to a function or macro.
+    """
+    def __init__(self, symbol_name: str, location: Location):
+        self.symbol_name = symbol_name
+        self.location = location
+
+    @classmethod
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'Call':
+        symbol_name = yaml["symbol"]
+        location = Location(yaml["file"], int(yaml["line"]))
+
+        return Call(symbol_name, location)
+
+
 class Affection:
     """
     Represents that a difference in an internal symbol has an effect on
     an external one or vice versa.
     """
-    def __init__(self, symbol, callstack_old, callstack_new):
+    def __init__(self, symbol: Union[ExternalSymbol, InternalSymbol],
+                 callstack_old: List[Call], callstack_new: List[Call]):
         self.symbol = symbol
         self.callstack_old = callstack_old
         self.callstack_new = callstack_new
 
     @classmethod
-    def from_yaml(cls, yaml):
+    def from_yaml(cls, yaml: Dict[str, Any]) -> 'Affection':
         symbol = ExternalSymbol.from_yaml(yaml["symbol"])
         callstack_old = [Call.from_yaml(call)
                          for call in yaml["callstack-old"]]
@@ -158,22 +183,6 @@ class Affection:
                          for call in yaml["callstack-new"]]
 
         return cls(symbol, callstack_old, callstack_new)
-
-
-class Call:
-    """
-    Represents a call to a function or macro.
-    """
-    def __init__(self, symbol_name, location):
-        self.symbol_name = symbol_name
-        self.location = location
-
-    @classmethod
-    def from_yaml(cls, yaml):
-        symbol_name = yaml["symbol"]
-        location = Location(yaml["file"], int(yaml["line"]))
-
-        return Call(symbol_name, location)
 
 
 class HTMLGenerator:
@@ -187,11 +196,11 @@ class HTMLGenerator:
     internal_symbol_heading = "differing symbols:"
     external_symbol_heading = "affected KABI symbols:"
 
-    def __init__(self, input_dir, output_dir):
+    def __init__(self, input_dir: str, output_dir: str):
         self.input_dir = input_dir
         self.output_dir = output_dir
 
-    def _collect_differences(self, directory):
+    def _collect_differences(self, directory: str) -> Dict[str, Difference]:
         """
         Parses all YAML files in the given directory into a map whose keys
         are symbols and values are Difference objects.
@@ -205,16 +214,18 @@ class HTMLGenerator:
 
         return differences
 
-    def _collect_external_symbols(self, differences):
+    def _collect_external_symbols(self, differences: Dict[str, Difference])\
+            -> Dict[ExternalSymbol, List[Affection]]:
         """
         Converts a symbol to Difference map to a map with ExternalSymbols
         as keys and Affection objects containing InternalSymbols that affect
         the ExternalSymbol as values.
         """
-        external_symbol_map = dict()
+        external_symbol_map: Dict[ExternalSymbol, List[Affection]] = dict()
         for difference in differences.values():
             for affection in difference.affected_symbols:
                 external_symbol = affection.symbol
+                assert isinstance(external_symbol, ExternalSymbol)
 
                 if external_symbol not in external_symbol_map:
                     external_symbol_map[external_symbol] = []
@@ -224,7 +235,7 @@ class HTMLGenerator:
 
         return external_symbol_map
 
-    def _difference_to_html(self, difference):
+    def _difference_to_html(self, difference: Difference) -> None:
         """Converts a Difference object into HTML."""
         tag, text = self.tag, self.text
 
@@ -252,12 +263,13 @@ class HTMLGenerator:
                         with tag("li"):
                             self._affection_external_to_html(affection)
 
-    def _affection_external_to_html(self, affection):
+    def _affection_external_to_html(self, affection: Affection) -> None:
         """
         Converts an Affection object whose symbol is a ExternalSymbol into
         HTML.
         """
         tag, text = self.tag, self.text
+        assert isinstance(affection.symbol, ExternalSymbol)
 
         href = ("kabi/" + affection.symbol.name + "-" +
                 str(affection.symbol.kind) + ".html")
@@ -271,12 +283,13 @@ class HTMLGenerator:
                 text("new callstack:")
                 self._callstack_to_html(affection.callstack_new)
 
-    def _affection_internal_to_html(self, affection):
+    def _affection_internal_to_html(self, affection: Affection) -> None:
         """
         Converts an Affection object whose symbol is a InternalSymbol into
         HTML.
         """
         tag, text = self.tag, self.text
+        assert isinstance(affection.symbol, InternalSymbol)
 
         href = "../" + affection.symbol.name + ".html"
         with tag("a", href=href):
@@ -291,7 +304,7 @@ class HTMLGenerator:
                 text("new callstack:")
                 self._callstack_to_html(affection.callstack_new)
 
-    def _callstack_to_html(self, callstack):
+    def _callstack_to_html(self, callstack: List[Call]) -> None:
         """Converts a callstack (i.e. a list of Call objects) into HTML."""
         tag, text = self.tag, self.text
 
@@ -300,7 +313,9 @@ class HTMLGenerator:
                 with tag("li"):
                     text(call.symbol_name + " at " + str(call.location))
 
-    def _external_symbol_to_html(self, symbol, affections):
+    def _external_symbol_to_html(
+            self, symbol: ExternalSymbol,
+            affections: List[Affection]) -> None:
         """
         Converts an external symbol to HTML, including links to pages of
         internal symbols affecting it.
@@ -323,12 +338,13 @@ class HTMLGenerator:
                         with tag("li"):
                             self._affection_internal_to_html(affection)
 
-    def _generate_head(self):
+    def _generate_head(self) -> None:
         """Generates meta tags and the stylesheet link."""
         self.doc.stag("meta", charset="utf-8")
         self.doc.stag("link", rel="stylesheet", href=self.bootstrap)
 
-    def _generate_internal_symbol_table(self, differences):
+    def _generate_internal_symbol_table(
+            self, differences: Dict[str, Difference]) -> None:
         """Generates a table listing all differences with links to them."""
         line, tag = self.doc.line, self.tag
 
@@ -345,7 +361,9 @@ class HTMLGenerator:
                             line("a", difference.symbol_old.name, href=href)
                         line("td", difference.symbol_old.kind)
 
-    def _generate_external_symbol_table(self, external_symbols):
+    def _generate_external_symbol_table(
+            self,
+            external_symbols: Dict[ExternalSymbol, List[Affection]]) -> None:
         line, tag = self.doc.line, self.tag
 
         with tag("table", klass="table"):
@@ -362,7 +380,7 @@ class HTMLGenerator:
                             line("a", symbol.name, href=href)
                         line("td", symbol.kind)
 
-    def generate(self):
+    def generate(self) -> None:
         """
         Converts YAMLs in self.input_dir into HTML files and puts them into
         self.output_dir.
@@ -438,7 +456,7 @@ class HTMLGenerator:
             f.write(indent(self.doc.getvalue()))
 
 
-def run_from_cli():
+def run_from_cli() -> None:
     parser = argparse.ArgumentParser(description="Converts YAML files" +
                                      " generated by DiffKemp into " +
                                      "human-readable HTML pages.")
