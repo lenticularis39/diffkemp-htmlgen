@@ -4,6 +4,8 @@
     <title>kmalloc_node</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="pygments.css" />
+    <link rel="stylesheet" href="htmlgen.css" />
   </head>
   <body class="py-4">
     <div class="container">
@@ -33,8 +35,7 @@
 
 !       return kmem_cache_alloc_node_trace(
 !               kmalloc_caches[kmalloc_type(flags)][i],
-                        flags, node, size);
-</pre></li>
+                        flags, node, size);</pre></li>
         <li>affects symbols:<ul><li><a href="kabi/__alloc_pages_nodemask-function.html">__alloc_pages_nodemask</a><ul><li>old callstack:<ul><li>init_rescuer at kernel/workqueue.c:4094</li><li>alloc_worker at kernel/workqueue.c:4013</li><li>kzalloc_node at kernel/workqueue.c:1704</li><li>kmalloc_node at include/linux/slab.h:718</li></ul></li><li>new callstack:<ul><li>init_rescuer at kernel/workqueue.c:4117</li><li>alloc_worker at kernel/workqueue.c:4036</li><li>kzalloc_node at kernel/workqueue.c:1724</li><li>kmalloc_node at include/linux/slab.h:760</li></ul></li></ul></li></ul></li>
       </ul>
     </div>

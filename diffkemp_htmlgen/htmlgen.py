@@ -1,8 +1,11 @@
 import argparse
 import os
 import yaml
+from diffkemp_htmlgen import css
 from enum import IntEnum
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
+from pygments import highlight, lexers  # type: ignore
+from pygments.formatters.html import HtmlFormatter  # type: ignore
 from yattag import Doc, indent  # type: ignore
 
 
@@ -185,6 +188,68 @@ class Affection:
         return cls(symbol, callstack_old, callstack_new)
 
 
+class Diff:
+    """Represents a source code difference."""
+    class Fragment:
+        """
+        Represents a diff fragment, i.e. a continuous section of corresponding
+        lines in both modules.
+        """
+        def __init__(self, function_name: str,
+                     start_line_left: int = -1,
+                     start_line_right: int = -1):
+            self.function_name = function_name
+            self.start_line_left = start_line_left
+            self.start_line_right = start_line_right
+            self.lines_left: List[str] = []
+            self.lines_right: List[str] = []
+
+    def __init__(self, input: str):
+        lines = input.split("\n")
+        current_fragment = None
+        state: Optional[str] = None
+        self.fragments: List['Diff.Fragment'] = []
+
+        for line in lines:
+            sline = line.lstrip()
+
+            if sline.startswith("*************** "):
+                # New fragment.
+                current_fragment = Diff.Fragment(
+                    sline[len("*************** "):])
+                self.fragments.append(current_fragment)
+                continue
+
+            if current_fragment is None:
+                raise ValueError("Invalid diff format")
+
+            if sline.startswith("***"):
+                # Start and end of left diff.
+                line_nums = sline[len("*** "):-len(" ***")]
+                current_fragment.start_line_left = int(
+                    line_nums.split(",")[0])
+                state = "left_line"
+                offset = len(line) - len(sline)
+                continue
+
+            if sline.startswith("---"):
+                # Start and end of right diff.
+                line_nums = sline[len("--- "):-len(" ---")]
+                current_fragment.start_line_right = int(
+                    line_nums.split(",")[0])
+                state = "right_line"
+                offset = len(line) - len(sline)
+                continue
+
+            if state is None:
+                raise ValueError("Invalid diff format")
+
+            if state == "left_line":
+                current_fragment.lines_left.append(line[offset:])
+            if state == "right_line":
+                current_fragment.lines_right.append(line[offset:])
+
+
 class HTMLGenerator:
     """
     Converts output from DiffKemp in YAML format into human-readable HTML.
@@ -195,10 +260,48 @@ class HTMLGenerator:
     home_link_text = "go back"
     internal_symbol_heading = "differing symbols:"
     external_symbol_heading = "affected KABI symbols:"
+    htmlgen_style = "htmlgen.css"
+    pygments_style = "pygments.css"
 
-    def __init__(self, input_dir: str, output_dir: str):
+    def __init__(self, input_dir: str, output_dir: str,
+                 graphical_diff: bool = False, highlight_syntax: bool = False):
         self.input_dir = input_dir
         self.output_dir = output_dir
+        self.graphical_diff = graphical_diff
+        self.highlight_syntax = highlight_syntax
+        self.lexer = lexers.get_lexer_by_name("c", stripnl=False)
+        self.formatter = HtmlFormatter()
+
+    def _format_source(self, text: str) -> None:
+        """
+        Formats C code using pre and highlights it if highlighting is enabled.
+        """
+        if not self.highlight_syntax:
+            # Do not highlight syntax, use a simple pre block instead.
+            with self.tag("pre"):
+                self.text(text)
+            return
+
+        txt = highlight(text, self.lexer, self.formatter).rstrip()
+
+        # Replace spaces outside tags with &#32; and EOLs with &#10; to protect
+        # them from yattag's indent function, which would otherwise destroy
+        # them.
+        txt_parsed = []
+        tags = 0
+        for ch in txt:
+            if ch == "<":
+                tags += 1
+            elif ch == ">":
+                tags -= 1
+            if ch == " " and tags == 0:
+                txt_parsed.append("&#32;")
+            elif ch == "\n" and tags == 0:
+                txt_parsed.append("&#10;")
+            else:
+                txt_parsed.append(ch)
+
+        self.doc.asis("".join(txt_parsed))
 
     def _collect_differences(self, directory: str) -> Dict[str, Difference]:
         """
@@ -254,8 +357,7 @@ class HTMLGenerator:
                 text("new location: " + str(difference.symbol_new.location))
             with tag("li"):
                 text("difference: ")
-                with tag("pre"):
-                    text(difference.diff)
+                self._diff_to_html(difference.diff.strip())
             with tag("li"):
                 text("affects symbols:")
                 with tag("ul"):
@@ -269,7 +371,8 @@ class HTMLGenerator:
         HTML.
         """
         tag, text = self.tag, self.text
-        assert isinstance(affection.symbol, ExternalSymbol)
+        if not isinstance(affection.symbol, ExternalSymbol):
+            raise ValueError("Affection not external")
 
         href = ("kabi/" + affection.symbol.name + "-" +
                 str(affection.symbol.kind) + ".html")
@@ -289,7 +392,8 @@ class HTMLGenerator:
         HTML.
         """
         tag, text = self.tag, self.text
-        assert isinstance(affection.symbol, InternalSymbol)
+        if not isinstance(affection.symbol, InternalSymbol):
+            raise ValueError("Incorrent affection type")
 
         href = "../" + affection.symbol.name + ".html"
         with tag("a", href=href):
@@ -338,10 +442,120 @@ class HTMLGenerator:
                         with tag("li"):
                             self._affection_internal_to_html(affection)
 
-    def _generate_head(self) -> None:
+    def _diff_to_html(self, diff_str: str) -> None:
+        """Converts a diff to a graphical representation."""
+        tag = self.tag
+
+        if not self.graphical_diff:
+            # Use the original diff output.
+            self._format_source(diff_str)
+            return
+
+        def format(line: int) -> str:
+            return "{:4}".format(line)
+
+        with tag("table", klass="table diff-table"):
+            diff = Diff(diff_str)
+            for fragment in diff.fragments:
+                # Heading
+                with tag("tr"):
+                    with tag("td", klass="heading", colspan="2"):
+                        self._format_source(fragment.function_name)
+                # The actual diff
+                index_left = 0
+                index_right = 0
+                while (index_left < len(fragment.lines_left) or
+                       index_right < len(fragment.lines_right)):
+                    line_idx_left = fragment.start_line_left + index_left
+                    line_idx_right = fragment.start_line_right + index_right
+
+                    if index_left < len(fragment.lines_left):
+                        line_left = fragment.lines_left[index_left]
+                    else:
+                        line_left = ""
+                    if index_right < len(fragment.lines_right):
+                        line_right = fragment.lines_right[index_right]
+                    else:
+                        line_right = ""
+
+                    if (line_left.startswith("!") and
+                            line_right.startswith("!")):
+                        with tag("tr"):
+                            with tag("td", klass="line removed"):
+                                self._format_source(" " + format(line_idx_left)
+                                                    + " - " + line_left[1:])
+                            with tag("td", klass="line added"):
+                                self._format_source(" " +
+                                                    format(line_idx_right) +
+                                                    " + " + line_right[1:])
+                        index_left += 1
+                        index_right += 1
+                        continue
+
+                    if len(line_left) and line_left[0] in ["!", "-"]:
+                        with tag("tr"):
+                            with tag("td", klass="line removed"):
+                                self._format_source(" " +
+                                                    format(line_idx_left) +
+                                                    " - " + line_left[1:])
+                            with tag("td", klass="line empty"):
+                                pass
+                        index_left += 1
+                        continue
+
+                    if len(line_right) and line_right[0] in ["!", "+"]:
+                        with tag("tr"):
+                            with tag("td", klass="line empty"):
+                                pass
+                            with tag("td", klass="line added"):
+                                self._format_source(" " +
+                                                    format(line_idx_right) +
+                                                    " + " + line_right[1:])
+                        index_right += 1
+                        continue
+
+                    # Handle cases when the context line is only on one side.
+                    if index_left >= len(fragment.lines_left):
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_left) +
+                                                "  " + line_right)
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_right) +
+                                                "  " + line_right)
+                        index_left += 1
+                        index_right += 1
+                        continue
+                    if index_right >= len(fragment.lines_right):
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_left) +
+                                                "  " + line_left)
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_right) +
+                                                "  " + line_left)
+                        index_left += 1
+                        index_right += 1
+                        continue
+
+                    # Regular line (diff context)
+                    with tag("tr"):
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_left) +
+                                                "  " + line_left)
+                        with tag("td", klass="line"):
+                            self._format_source(" " + format(line_idx_right) +
+                                                "  " + line_right)
+
+                    index_left += 1
+                    index_right += 1
+
+    def _generate_head(self, path: str = "") -> None:
         """Generates meta tags and the stylesheet link."""
         self.doc.stag("meta", charset="utf-8")
         self.doc.stag("link", rel="stylesheet", href=self.bootstrap)
+        self.doc.stag("link", rel="stylesheet",
+                      href=os.path.join(path, self.pygments_style))
+        self.doc.stag("link", rel="stylesheet",
+                      href=os.path.join(path, self.htmlgen_style))
 
     def _generate_internal_symbol_table(
             self, differences: Dict[str, Difference]) -> None:
@@ -421,7 +635,7 @@ class HTMLGenerator:
                 with self.tag("head"):
                     with self.tag("title"):
                         self.text(symbol.name)
-                    self._generate_head()
+                    self._generate_head(path="..")
                 with self.tag("body", klass="py-4"):
                     with self.tag("div", klass="container"):
                         self._external_symbol_to_html(symbol, affections)
@@ -452,8 +666,25 @@ class HTMLGenerator:
                             self._generate_external_symbol_table(
                                 external_symbols)
 
+        # Create index page.
         with open(os.path.join(self.output_dir, "index.html"), "w") as f:
             f.write(indent(self.doc.getvalue()))
+
+        # Generate pygments style.
+        with open(os.path.join(self.output_dir, self.pygments_style),
+                  "w") as f:
+            style = self.formatter.get_style_defs('.highlight').split("\n")
+            # Remove lines with background-color since we want to set that
+            # separately.
+            style = list(filter(lambda x: "background:" not in x, style))
+            f.write("\n".join(style))
+
+        # Write htmlgen style.
+        with open(os.path.join(self.output_dir, self.htmlgen_style),
+                  "w") as f:
+            f.write(css.htmlgen_css)
+            if self.graphical_diff:
+                f.write(css.htmlgen_css_maxwidth)
 
 
 def run_from_cli() -> None:
@@ -464,7 +695,13 @@ def run_from_cli() -> None:
                                           " generated by DiffKemp")
     parser.add_argument("output_dir", help="directory where the HTML output" +
                                            " will be generated")
+    parser.add_argument("--graphical-diffs", help="parse and format diffs",
+                        action="store_true")
+    parser.add_argument("--highlight-syntax",
+                        help="enable diff syntax highlighting",
+                        action="store_true")
     args = parser.parse_args()
 
-    generator = HTMLGenerator(args.input_dir, args.output_dir)
+    generator = HTMLGenerator(args.input_dir, args.output_dir,
+                              args.graphical_diffs, args.highlight_syntax)
     generator.generate()

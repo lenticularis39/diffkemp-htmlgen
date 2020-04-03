@@ -61,6 +61,23 @@ def difference():
     return difference
 
 
+def test__format_source_highlight(htmlgen):
+    htmlgen.highlight_syntax = True
+    htmlgen._format_source("int main (int argc, char **argv);")
+    html = indent(htmlgen.doc.getvalue())
+    expected_html = """<div class="highlight">
+  <pre><span></span><span class="kt">int</span>&#32;<span class="nf">main</span>&#32;<span class="p">(</span><span class="kt">int</span>&#32;<span class="n">argc</span><span class="p">,</span>&#32;<span class="kt">char</span>&#32;<span class="o">**</span><span class="n">argv</span><span class="p">);</span>&#10;</pre>
+</div>"""
+    assert html == expected_html
+
+
+def test__format_source_no_highlight(htmlgen):
+    htmlgen._format_source("int main (int argc, char **argv);")
+    html = indent(htmlgen.doc.getvalue())
+    expected_html = "<pre>int main (int argc, char **argv);</pre>"
+    assert html == expected_html
+
+
 def test__collect_differences(htmlgen):
     differences = htmlgen._collect_differences(htmlgen.input_dir)
 
@@ -102,8 +119,7 @@ def test__difference_to_html(htmlgen, difference):
   <li>kind: function</li>
   <li>old location: include/linux/slab.h:541</li>
   <li>new location: include/linux/slab.h:578</li>
-  <li>difference: <pre>
-  *************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
+  <li>difference: <pre>*************** static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
   *** 544,546 ***
       if (__builtin_constant_p(size) &amp;&amp;
   !       size &lt;= KMALLOC_MAX_CACHE_SIZE &amp;&amp; !(flags &amp; GFP_DMA)) {
@@ -121,8 +137,7 @@ def test__difference_to_html(htmlgen, difference):
 
   !       return kmem_cache_alloc_node_trace(
   !               kmalloc_caches[kmalloc_type(flags)][i],
-                          flags, node, size);
-    </pre></li>
+                          flags, node, size);</pre></li>
   <li>affects symbols:<ul><li><a href="kabi/__alloc_pages_nodemask-function.html">__alloc_pages_nodemask</a><ul><li>old callstack:<ul><li>init_rescuer at kernel/workqueue.c:4094</li></ul></li><li>new callstack:<ul><li>init_rescuer at kernel/workqueue.c:4117</li></ul></li></ul></li></ul></li>
 </ul>"""
     assert html == expected_html
@@ -187,11 +202,105 @@ def test__external_symbol_to_html(htmlgen, difference):
     assert html == expected_html
 
 
+def test__diff_to_html(htmlgen):
+    diff_str = """  *************** kmalloc_node
+  *** 544,546 ***
+      if (__builtin_constant_p(size) &&
+  !       size <= KMALLOC_MAX_CACHE_SIZE && !(flags & GFP_DMA)) {
+          unsigned int i = kmalloc_index(size);
+  --- 581,583 ---
+      if (__builtin_constant_p(size) &&
+  !       size <= KMALLOC_MAX_CACHE_SIZE) {
+          unsigned int i = kmalloc_index(size);
+  *************** kmalloc_node
+  *** 550,552 ***
+
+  !       return kmem_cache_alloc_node_trace(kmalloc_caches[i],
+                          flags, node, size);
+  --- 587,590 ---
+
+  !       return kmem_cache_alloc_node_trace(
+  !               kmalloc_caches[kmalloc_type(flags)][i],
+                          flags, node, size);"""
+    htmlgen.graphical_diff = True
+    htmlgen._diff_to_html(diff_str)
+    html = indent(htmlgen.doc.getvalue())
+    expected_html = """<table class="table diff-table">
+  <tr>
+    <td class="heading" colspan="2">
+      <pre>kmalloc_node</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line">
+      <pre>  544      if (__builtin_constant_p(size) &amp;&amp;</pre>
+    </td>
+    <td class="line">
+      <pre>  581      if (__builtin_constant_p(size) &amp;&amp;</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line removed">
+      <pre>  545 -        size &lt;= KMALLOC_MAX_CACHE_SIZE &amp;&amp; !(flags &amp; GFP_DMA)) {</pre>
+    </td>
+    <td class="line added">
+      <pre>  582 +        size &lt;= KMALLOC_MAX_CACHE_SIZE) {</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line">
+      <pre>  546          unsigned int i = kmalloc_index(size);</pre>
+    </td>
+    <td class="line">
+      <pre>  583          unsigned int i = kmalloc_index(size);</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="heading" colspan="2">
+      <pre>kmalloc_node</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line">
+      <pre>  550  </pre>
+    </td>
+    <td class="line">
+      <pre>  587  </pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line removed">
+      <pre>  551 -        return kmem_cache_alloc_node_trace(kmalloc_caches[i],</pre>
+    </td>
+    <td class="line added">
+      <pre>  588 +        return kmem_cache_alloc_node_trace(</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line empty"></td>
+    <td class="line added">
+      <pre>  589 +                kmalloc_caches[kmalloc_type(flags)][i],</pre>
+    </td>
+  </tr>
+  <tr>
+    <td class="line">
+      <pre>  552                          flags, node, size);</pre>
+    </td>
+    <td class="line">
+      <pre>  590                          flags, node, size);</pre>
+    </td>
+  </tr>
+</table>"""
+    return html == expected_html
+
+
 def test__generate_head(htmlgen):
     htmlgen._generate_head()
     html = indent(htmlgen.doc.getvalue())
     expected_html = """<meta charset="utf-8" />
-<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" />"""
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" />
+<link rel="stylesheet" href="pygments.css" />
+<link rel="stylesheet" href="htmlgen.css" />"""
     assert html == expected_html
 
 
@@ -247,5 +356,6 @@ def test_generate(test_dir):
         htmlgen = HTMLGenerator(os.path.join(test_dir, "differences"),
                                 os.path.join(tmpdir, "output_html"))
         htmlgen.generate()
-        assert call(["diff", "-r", os.path.join(tmpdir, "output_html"),
+        assert call(["diff", "-r", "--exclude=pygments.css",
+                     os.path.join(tmpdir, "output_html"),
                      os.path.join(test_dir, "output_html")]) == 0
